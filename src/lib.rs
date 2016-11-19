@@ -3,7 +3,6 @@
 //! Particularly useful for embedded devices.
 
 #![no_std]
-#![feature(never_type)]
 
 pub trait BlockingTx {
     type Error;
