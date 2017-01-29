@@ -1,9 +1,11 @@
 [package]
 name = "embedded-serial"
 description = "Some traits to describe the features of embedded Serial (UART) devices."
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Jonathan 'theJPster' Pallant <github@thejpster.org.uk>"]
 license = "MIT"
 keywords = ["embedded", "serial", "uart", "trait", "traits"]
+repository = "https://github.com/thejpster/embedded_serial"
+homepage = "https://www.thejpster.org.uk"
 
 [dependencies]
