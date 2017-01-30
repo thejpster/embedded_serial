@@ -49,7 +49,7 @@
 //!     }
 //!
 //!     fn write_data(&mut self, timeout: &<T as MutBlockingTxWithTimeout>::Timeout) -> Result<bool, <T as MutBlockingTxWithTimeout>::Error> {
-//!         let len = self.uart.puts_to(b"AT\n", timeout).map_err(|e| e.1)?;
+//!         let len = self.uart.puts(b"AT\n", timeout).map_err(|e| e.1)?;
 //!         Ok(len == 3)
 //!     }
 //! }
@@ -74,7 +74,7 @@
 //!     fn write_data(&mut self) -> Result<bool, <T as MutNonBlockingTx>::Error> {
 //!         let data = b"AT\n";
 //!         if let Some(len) = self.sent {
-//!             match self.uart.puts_try(&data[len..]) {
+//!             match self.uart.puts(&data[len..]) {
 //!                 // Sent some or more of the data
 //!                 Ok(sent) => {
 //!                     let total = len + sent;
@@ -162,7 +162,7 @@
 //!     pub fn read_response(&mut self, timeout: &<T as MutBlockingRxWithTimeout>::Timeout) -> Result<bool, <T as MutBlockingRxWithTimeout>::Error> {
 //!         let mut buffer = [0u8; 3];
 //!         // If we got an error, we don't care any many we actually received.
-//!         let len = self.uart.gets_to(&mut buffer, timeout).map_err(|e| e.1)?;
+//!         let len = self.uart.gets(&mut buffer, timeout).map_err(|e| e.1)?;
 //!         // process data in buffer here
 //!         Ok(len == buffer.len())
 //!     }
@@ -197,7 +197,7 @@
 //!         if self.buffer.len() < WANTED {
 //!             let needed = WANTED - self.buffer.len();
 //!             let this_time = if needed < CHUNK_SIZE { needed } else { CHUNK_SIZE };
-//!             match self.uart.gets_try(&mut buffer[0..needed]) {
+//!             match self.uart.gets(&mut buffer[0..needed]) {
 //!                 // Read some or more of the data
 //!                 Ok(read) => {
 //!                     self.buffer.extend(&buffer[0..read]);
@@ -273,7 +273,7 @@ pub trait MutBlockingTxWithTimeout {
     /// If it times out, `Ok(None)` is returned.
     /// If it sends the data, `Ok(Some(ch))` is returned.
     /// If it fails, `Err(...)` is returned.
-    fn putc_to(&mut self, ch: u8, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
+    fn putc(&mut self, ch: u8, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
 
     /// Attempts to write a complete string to the UART.
     /// Returns number of octets written, or an error and the number of octets written.
@@ -282,12 +282,12 @@ pub trait MutBlockingTxWithTimeout {
     /// A result of `Ok(data.len())` means all the data was sent.
     /// A result of `Ok(size < data.len())` means only some of the data was sent then there was a timeout.
     /// A result of `Err(size, e)` means some (or all) of the data was sent then there was an error.
-    fn puts_to(&mut self, data: &[u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
+    fn puts(&mut self, data: &[u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
         let mut count: usize = 0;
         for octet in data {
             // If we get an error, return it (with the number of bytes sent),
             // else if we get None, we timed out so abort.
-            if self.putc_to(*octet, timeout).map_err(|e| (count, e))?.is_none() {
+            if self.putc(*octet, timeout).map_err(|e| (count, e))?.is_none() {
                 break;
             }
             count = count + 1;
@@ -309,17 +309,17 @@ pub trait MutNonBlockingTx {
     ///
     /// In some implementations, this can result in an Error.
     /// If not, use `type Error = !`.
-    fn putc_try(&mut self, ch: u8) -> Result<Option<u8>, Self::Error>;
+    fn putc(&mut self, ch: u8) -> Result<Option<u8>, Self::Error>;
 
     /// Write as much of a complete string to the UART as possible.
     /// Returns the number of octets sent, plus the result from the
-    /// last `putc_try` call. Aborts early if `putc_try` fails in any way.
-    fn puts_try(&mut self, data: &[u8]) -> Result<usize, (usize, Self::Error)> {
+    /// last `putc` call. Aborts early if `putc` fails in any way.
+    fn puts(&mut self, data: &[u8]) -> Result<usize, (usize, Self::Error)> {
         let mut count = 0;
         for octet in data {
             // If we get an error, return it (with the number of bytes sent),
             // else if we get None, we timed out so abort.
-            if self.putc_try(*octet).map_err(|e| (count, e))?.is_none() {
+            if self.putc(*octet).map_err(|e| (count, e))?.is_none() {
                 break;
             }
             count = count + 1;
@@ -374,7 +374,7 @@ pub trait MutBlockingRxWithTimeout {
     /// If it times out, Ok(None) is returned.
     /// If it receives data, Ok(Some(data)) is returned.
     /// If it fails, Err(...) is returned.
-    fn getc_to(&mut self, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
+    fn getc(&mut self, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
 
     /// Read a specified number of octets into the given buffer, blocking
     /// until that many have been read or a timeout occurs.
@@ -383,10 +383,10 @@ pub trait MutBlockingRxWithTimeout {
     /// If not, use `type Error = !`.
     ///
     /// If the result is `Ok(size)` but `size <= buffer.len()`, you had a timeout.
-    fn gets_to(&mut self, buffer: &mut [u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
+    fn gets(&mut self, buffer: &mut [u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
         let mut count:usize = 0;
         for space in buffer {
-            *space = match self.getc_to(timeout) {
+            *space = match self.getc(timeout) {
                 Err(e) => return Err((count, e)),
                 Ok(None) => return Ok(count),
                 Ok(Some(ch)) => ch,
@@ -412,7 +412,7 @@ pub trait MutNonBlockingRx {
     /// If it times out, Ok(None) is returned.
     /// If it receives data, Ok(Some(data)) is returned.
     /// If it fails, Err(...) is returned.
-    fn getc_try(&mut self) -> Result<Option<u8>, Self::Error>;
+    fn getc(&mut self) -> Result<Option<u8>, Self::Error>;
 
     /// Read a specified number of octets into the given buffer, or until the
     /// data runs out.
@@ -421,10 +421,10 @@ pub trait MutNonBlockingRx {
     /// If not, use `type Error = !`.
     ///
     /// If the result is `Ok(size)` but `size <= buffer.len()`, you ran out of data.
-    fn gets_try(&mut self, buffer: &mut [u8]) -> Result<usize, (usize, Self::Error)> {
+    fn gets(&mut self, buffer: &mut [u8]) -> Result<usize, (usize, Self::Error)> {
         let mut count:usize = 0;
         for space in buffer {
-            *space = match self.getc_try() {
+            *space = match self.getc() {
                 Err(e) => return Err((count, e)),
                 Ok(None) => return Ok(count),
                 Ok(Some(ch)) => ch,
@@ -481,7 +481,7 @@ pub trait ImmutBlockingTxWithTimeout {
     /// If it times out, `Ok(None)` is returned.
     /// If it sends the data, `Ok(Some(ch))` is returned.
     /// If it fails, `Err(...)` is returned.
-    fn putc_to(&self, ch: u8, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
+    fn putc(&self, ch: u8, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
 
     /// Attempts to write a complete string to the UART.
     /// Returns number of octets written, or an error and the number of octets written.
@@ -490,12 +490,12 @@ pub trait ImmutBlockingTxWithTimeout {
     /// A result of `Ok(data.len())` means all the data was sent.
     /// A result of `Ok(size < data.len())` means only some of the data was sent then there was a timeout.
     /// A result of `Err(size, e)` means some (or all) of the data was sent then there was an error.
-    fn puts_to(&self, data: &[u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
+    fn puts(&self, data: &[u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
         let mut count: usize = 0;
         for octet in data {
             // If we get an error, return it (with the number of bytes sent),
             // else if we get None, we timed out so abort.
-            if self.putc_to(*octet, timeout).map_err(|e| (count, e))?.is_none() {
+            if self.putc(*octet, timeout).map_err(|e| (count, e))?.is_none() {
                 break;
             }
             count = count + 1;
@@ -517,17 +517,17 @@ pub trait ImmutNonBlockingTx {
     ///
     /// In some implementations, this can result in an Error.
     /// If not, use `type Error = !`.
-    fn putc_try(&self, ch: u8) -> Result<Option<u8>, Self::Error>;
+    fn putc(&self, ch: u8) -> Result<Option<u8>, Self::Error>;
 
     /// Write as much of a complete string to the UART as possible.
     /// Returns the number of octets sent, plus the result from the
-    /// last `putc_try` call. Aborts early if `putc_try` fails in any way.
-    fn puts_try(&self, data: &[u8]) -> Result<usize, (usize, Self::Error)> {
+    /// last `putc` call. Aborts early if `putc` fails in any way.
+    fn puts(&self, data: &[u8]) -> Result<usize, (usize, Self::Error)> {
         let mut count = 0;
         for octet in data {
             // If we get an error, return it (with the number of bytes sent),
             // else if we get None, we timed out so abort.
-            if self.putc_try(*octet).map_err(|e| (count, e))?.is_none() {
+            if self.putc(*octet).map_err(|e| (count, e))?.is_none() {
                 break;
             }
             count = count + 1;
@@ -582,7 +582,7 @@ pub trait ImmutBlockingRxWithTimeout {
     /// If it times out, Ok(None) is returned.
     /// If it receives data, Ok(Some(data)) is returned.
     /// If it fails, Err(...) is returned.
-    fn getc_to(&self, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
+    fn getc(&self, timeout: &Self::Timeout) -> Result<Option<u8>, Self::Error>;
 
     /// Read a specified number of octets into the given buffer, blocking
     /// until that many have been read or a timeout occurs.
@@ -591,10 +591,10 @@ pub trait ImmutBlockingRxWithTimeout {
     /// If not, use `type Error = !`.
     ///
     /// If the result is `Ok(size)` but `size <= buffer.len()`, you had a timeout.
-    fn gets_to(&self, buffer: &mut [u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
+    fn gets(&self, buffer: &mut [u8], timeout: &Self::Timeout) -> Result<usize, (usize, Self::Error)> {
         let mut count:usize = 0;
         for space in buffer {
-            *space = match self.getc_to(timeout) {
+            *space = match self.getc(timeout) {
                 Err(e) => return Err((count, e)),
                 Ok(None) => return Ok(count),
                 Ok(Some(ch)) => ch,
@@ -620,7 +620,7 @@ pub trait ImmutNonBlockingRx {
     /// If it times out, Ok(None) is returned.
     /// If it receives data, Ok(Some(data)) is returned.
     /// If it fails, Err(...) is returned.
-    fn getc_try(&self) -> Result<Option<u8>, Self::Error>;
+    fn getc(&self) -> Result<Option<u8>, Self::Error>;
 
     /// Read a specified number of octets into the given buffer, or until the
     /// data runs out.
@@ -629,10 +629,10 @@ pub trait ImmutNonBlockingRx {
     /// If not, use `type Error = !`.
     ///
     /// If the result is `Ok(size)` but `size <= buffer.len()`, you ran out of data.
-    fn gets_try(&self, buffer: &mut [u8]) -> Result<usize, (usize, Self::Error)> {
+    fn gets(&self, buffer: &mut [u8]) -> Result<usize, (usize, Self::Error)> {
         let mut count:usize = 0;
         for space in buffer {
-            *space = match self.getc_try() {
+            *space = match self.getc() {
                 Err(e) => return Err((count, e)),
                 Ok(None) => return Ok(count),
                 Ok(Some(ch)) => ch,
@@ -640,37 +640,5 @@ pub trait ImmutNonBlockingRx {
             count = count + 1;
         }
         Ok(count)
-    }
-}
-
-mod example {
-    use super::*;
-
-    struct SuperUart {
-        handle: u16,
-    }
-
-    impl SuperUart {
-        pub fn new(handle: u16) -> SuperUart {
-            SuperUart { handle: handle }
-        }
-    }
-
-    impl BlockingTx for SuperUart {
-        type Error = ();
-
-        fn putc(&mut self, _ch: u8) -> Result<(), Self::Error> {
-            // Call putc here
-            Ok(())
-        }
-    }
-
-    impl MutNonBlockingTx for SuperUart {
-        type Error = ();
-
-        fn putc_try(&mut self, ch: u8) -> Result<Option<u8>, Self::Error> {
-            // Call putc here
-            Ok(None)
-        }
     }
 }
