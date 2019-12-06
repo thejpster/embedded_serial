@@ -1,3 +1,5 @@
+# DO NOT USE - see https://crates.io/crates/embedded-hal instead
+
 # Embedded Serial Traits
 
 ## Introduction
